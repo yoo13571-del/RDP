@@ -1,0 +1,44 @@
+name: RDP via Tailscale
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rdp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Install required packages & tailscale
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y xfce4 xfce4-goodies xrdp curl unzip
+          # install tailscale
+          curl -fsSL https://tailscale.com/install.sh | sh
+
+      - name: Create rdp user & set password
+        run: |
+          sudo useradd -m rdpuser || true
+          echo 'rdpuser:ChangeMe123!' | sudo chpasswd
+          echo "startxfce4" | sudo tee /home/rdpuser/.xsession
+          sudo chown rdpuser:rdpuser /home/rdpuser/.xsession
+
+      - name: Use auth key (write to file) & start tailscale
+        env:
+          TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+        run: |
+          # write key to a file so it is not visible in ps output
+          echo "$TAILSCALE_AUTHKEY" > /tmp/tskey
+          chmod 600 /tmp/tskey
+          sudo tailscale up --auth-key=file:/tmp/tskey --accept-routes || sudo tailscale up --auth-key=file:/tmp/tskey
+          # remove key file (best-effort)
+          shred -u /tmp/tskey || rm -f /tmp/tskey
+
+      - name: Start xrdp and show tailscale info
+        run: |
+          sudo systemctl enable xrdp
+          sudo systemctl restart xrdp
+          echo "Tailscale status:"
+          sudo tailscale status || true
+          sudo tailscale ip -4 || true
+          echo "Connect via the Tailscale IP shown above as user=rdpuser password=ChangeMe123!"
